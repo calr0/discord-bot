@@ -14,6 +14,10 @@ class salbot(discord.Client):
         self.token = token
         self.server = guild_name
 
+    @staticmethod
+    def log(message: str, level=logging.INFO):
+        logger.write(message, level)
+
     @utils.logger
     def run(self):
         return super().run(self.token)
@@ -21,11 +25,19 @@ class salbot(discord.Client):
     @utils.logger
     async def on_ready(self):
         guild = discord.utils.find(lambda g: g.name == self.server, self.guilds)
-        logger.write(f"{self.user} connected to '{guild.name}' ({guild.id})", logging.INFO)
+        salbot.log(f"{self.user} connected to '{guild.name}' ({guild.id})")
+        for member in guild.members:
+            logger.write(f"Found member: {member}", logging.INFO)
 
     async def on_message(self, message):
-        msg = "Message from {0.author}: {0.content}".format(message)
-        logger.write(msg, logging.INFO)
+        content = message.content
+        author = message.author
+        channel = message.channel
+
+        salbot.log(f"{author} posted message in {channel}: {content}")
+
+        if content == "!test":
+            await channel.send("test response")
 
 
 if __name__ == "__main__":
