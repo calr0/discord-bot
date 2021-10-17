@@ -2,6 +2,9 @@ import os
 import discord
 import dotenv
 import utils
+import logging
+
+from utils.logger import logger
 
 
 class salbot(discord.Client):
@@ -18,7 +21,11 @@ class salbot(discord.Client):
     @utils.logger
     async def on_ready(self):
         guild = discord.utils.find(lambda g: g.name == self.server, self.guilds)
-        print(f"{self.user} connected to '{guild.name}' ({guild.id})")
+        logger.write(f"{self.user} connected to '{guild.name}' ({guild.id})", logging.INFO)
+
+    async def on_message(self, message):
+        msg = "Message from {0.author}: {0.content}".format(message)
+        logger.write(msg, logging.INFO)
 
 
 if __name__ == "__main__":
