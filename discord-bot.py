@@ -22,7 +22,7 @@ class salbot(discord.Client):
 
 
 if __name__ == "__main__":
-    utils.init_logger()
+    utils.init_logging()
     dotenv.load_dotenv()
     TOKEN = os.getenv("DISCORD_TOKEN")
     GUILD = os.getenv("DISCORD_GUILD")

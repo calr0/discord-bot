@@ -1,8 +1,51 @@
 import logging
 import threading
 
+from glob import glob
+from os import path, makedirs, remove
+from collections import defaultdict
 from utils.decorator import base_decorator
 from utils.decorator import force_single_call
+
+"""
+Description:
+    Stores thread local data and a logger 
+    handle specific for each thread
+
+Note:
+    No lock needed around thread_loggers
+    sice the GIL makes defaultdict threadsafe
+    by default when reading/writing to it
+"""
+thread_loggers = defaultdict(dict)
+
+
+def get_log_scope_indentation(spacing=3):
+    id = threading.get_ident()
+    if id not in thread_loggers:
+        handler = start_thread_logging()
+        thread_loggers[id]["handler"] = handler
+        thread_loggers[id]["data"] = threading.local()
+        thread_loggers[id]["data"].depth = 0
+
+    thread_info = thread_loggers[id]
+    depth = thread_info["data"].depth
+    return (spacing * " ") * depth
+
+
+def update_thread_scope(increment: int):
+    id = threading.get_ident()
+    if id not in thread_loggers:
+        handler = start_thread_logging()
+        thread_loggers[id]["handler"] = handler
+        thread_loggers[id]["data"] = threading.local()
+        thread_loggers[id]["data"].depth = 0
+
+    thread_loggers[id]["data"].depth += increment
+
+
+def get_thread_logger():
+    return logger.get_logger(f"thread.{threading.get_ident()}.logger")
 
 
 class calldescr:
@@ -33,14 +76,7 @@ class calldescr:
 
 
 class logger(base_decorator):
-    class scope_indent_filter(logging.Filter):
-        def filter(self, record):
-            record.indentation = line_indent()
-            return True
-
-    thread_local = threading.local()
-    thread_local.depth = 0
-
+    file_format = "[%(asctime)s] %(threadName)-11s | %(levelname)-7s | %(indentation)s %(message)s"
     line_truncate_slice = slice(None, 1024)
     log_args = True
 
@@ -55,6 +91,20 @@ class logger(base_decorator):
         "method_type",
     ]
 
+    class scope_indent_filter(logging.Filter):
+        def filter(self, record):
+            record.indentation = get_log_scope_indentation()
+            return True
+
+    class thread_scoped_filter(logging.Filter):
+        def __init__(self, thread_name, *args, **kwargs):
+            logging.Filter.__init__(self, *args, **kwargs)
+            self.thread_name = thread_name
+
+        def filter(self, record):
+            record.indentation = get_log_scope_indentation()
+            return record.threadName == self.thread_name
+
     @staticmethod
     def get_logger(name=f"debug_{threading.get_ident()}"):
         thread_logger = logging.getLogger(name)
@@ -62,48 +112,75 @@ class logger(base_decorator):
 
     def __call__(self, *args, **kwargs):
         desc = calldescr(self, *args, **kwargs)
-        logger.thread_local.depth += 1
+
+        update_thread_scope(+1)
         logger.write(desc.step_in(include_args=True))
+        update_thread_scope(+2)
 
         ret = self.func(*args, **kwargs)
 
+        update_thread_scope(-2)
         logger.write(desc.step_out(ret, include_args=False))
-        logger.thread_local.depth -= 1
+        update_thread_scope(-1)
         return ret
 
     @staticmethod
     def write(message: str):
-        logline = f"{line_indent(logger.thread_local.depth)}{message}"
         thread_logger = logger.get_logger()
-        thread_logger.debug(logline[logger.line_truncate_slice])
+        thread_logger.debug(message[logger.line_truncate_slice])
         for handle in thread_logger.handlers:
             handle.flush()
 
-        return logline
+        return message
 
 
-def line_indent(depth=None, spacing=3):
-    if depth is None:
-        depth = logger.thread_local.depth
-    return (spacing * " ") * depth
+def start_thread_logging():
+    thread_name = threading.Thread.getName(threading.current_thread())
+    log_file = f"log/debug.thread.{thread_name}.log"
+
+    log_handler = logging.FileHandler(log_file, mode="w")
+    log_handler.setLevel(logging.DEBUG)
+
+    log_formatter = logging.Formatter(logger.file_format)
+    log_handler.setFormatter(log_formatter)
+
+    log_filter = logger.thread_scoped_filter(thread_name)
+    log_handler.addFilter(log_filter)
+
+    rootlogger = logging.getLogger()
+    rootlogger.addHandler(log_handler)
+
+    return log_handler
+
+
+def stop_thread_logging(log_handler):
+    # Remove thread log handler from root logger
+    logging.getLogger().removeHandler(log_handler)
+
+    # Close the thread log handler so that the lock on log file can be released
+    log_handler.close()
 
 
 @force_single_call
 def init_logging():
-    logfilter = logger.scope_indent_filter()
-    logformatter = logging.Formatter("[%(asctime)s] %(indentation)s %(message)s")
+    log_file_path = path.join("log", "debug.all.log")
+    log_file_path = path.abspath(log_file_path)
+    log_dir_path = path.dirname(log_file_path)
 
-    logfilehandler = logging.FileHandler("debug.log", mode="w")
-    logfilehandler.setFormatter(logformatter)
-    logfilehandler.addFilter(logfilter)
-    logfilehandler.setLevel(logging.DEBUG)
+    if not path.exists(log_file_path):
+        makedirs(log_dir_path)
+    else:
+        old_logfiles = glob(path.join(log_dir_path, "*.log"))
+        for old_log in old_logfiles:
+            remove(old_log)
 
-    logstreamhandler = logging.StreamHandler()
-    logstreamhandler.setFormatter(logformatter)
-    logstreamhandler.addFilter(logfilter)
-    logstreamhandler.setLevel(logging.DEBUG)
+    log_formatter = logging.Formatter(logger.file_format)
+    log_filter = logger.scope_indent_filter()
+    log_filehandler = logging.FileHandler(log_file_path, mode="w")
+    log_filehandler.setFormatter(log_formatter)
+    log_filehandler.addFilter(log_filter)
+    log_filehandler.setLevel(logging.DEBUG)
 
-    rootlogger = logging.getLogger()
-    rootlogger.setLevel(logging.DEBUG)
-    rootlogger.addHandler(logfilehandler)
-    rootlogger.addHandler(logstreamhandler)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.addHandler(log_filehandler)
