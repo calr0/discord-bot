@@ -41,12 +41,13 @@ class salbot(discord.Client):
 
         if content == "!test":
             await channel.send("test response")
+        elif content == "!asdf":
 
-        def check_response(m):
-            return m.content == "asdf" and m.channel == channel
+            def check_response(m, resp):
+                return m.content == resp and m.channel == channel
 
-        msg = await self.wait_for("message", check=check_response)
-        await channel.send(f"Hello {msg.author.name}")
+            msg = await self.wait_for("message", check=lambda m: check_response(m, "asdf"))
+            await channel.send(f"Hello {msg.author.name}")
 
 
 if __name__ == "__main__":
