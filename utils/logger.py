@@ -7,6 +7,8 @@ from collections import defaultdict
 from utils.decorator import base_decorator
 from utils.decorator import force_single_call
 
+LOG_DIR = "log"
+
 
 class calldescr:
     def __init__(self, logdec, *args, **kwargs):
@@ -37,33 +39,22 @@ class calldescr:
 
 class logger(base_decorator):
     """
-        This class is both a logging decorator and log handle manager.    \\
-        Any function decorated with @logger will have every call made to  \\
-        it logged, including params and return values. If nested funciton \\
-        calls are decorated, the logfile will show the scope of each call \\
-        by indenting the logfile lines according to the callstack depth. 
+    ### Description
 
-        This class writes to both a single global logfile, as well as to  \\
-        thread local logs
+    This class is both a logging decorator and log handle manager. Any function decorated
+    with @logger will have every call made to it logged, including params and return values.
+    If nested funciton calls are decorated, the logfile will show the scope of each call by
+    indenting the logfile lines according to the callstack depth.
+
+    This class writes to both a single global logfile, as well as to thread local logs
     """
-
-    object_functions = [
-        "__init__",
-        "__get__",
-        "__call__",
-        "__getattribute__",
-        "func",
-        "obj",
-        "cls",
-        "method_type",
-    ]
 
     _file_max_line_len = 1024
     _strm_max_line_len = get_terminal_size()[0] + 15
     _line_format = "[%(asctime)s] %(threadName)-11s | %(levelname)-7s | %(indentation)s%(message)"
-    file_line_format = f"{_line_format}.{_file_max_line_len - len(_line_format)}s"
-    strm_line_format = f"{_line_format}.{_strm_max_line_len - len(_line_format)}s"
 
+    logfile_line_format = f"{_line_format}.{_file_max_line_len - len(_line_format)}s"
+    stream_line_format = f"{_line_format}.{_strm_max_line_len - len(_line_format)}s"
     thread_loggers = defaultdict(dict)
 
     class thread_scoped_filter(logging.Filter):
@@ -124,11 +115,11 @@ class logger(base_decorator):
 
 def init_thread_logging():
     thread_name = threading.Thread.getName(threading.current_thread())
-    log_file = f"log/debug.thread.{thread_name}.log"
+    log_file = path.join(LOG_DIR, f"debug.thread.{thread_name}.log")
 
     log_handler = logging.FileHandler(log_file, mode="w")
     log_handler.setLevel(logging.DEBUG)
-    log_formatter = logging.Formatter(logger.file_line_format)
+    log_formatter = logging.Formatter(logger.logfile_line_format)
     log_handler.setFormatter(log_formatter)
     log_filter = logger.thread_scoped_filter(thread_name)
     log_handler.addFilter(log_filter)
@@ -146,7 +137,7 @@ def stop_thread_logging(log_handler):
 
 @force_single_call
 def init_logging():
-    log_file_path = path.join("log", "debug.all.log")
+    log_file_path = path.join(LOG_DIR, "debug.all.log")
     log_file_path = path.abspath(log_file_path)
 
     log_dir_path = path.dirname(log_file_path)
@@ -161,13 +152,13 @@ def init_logging():
     file_log_filter = logger.thread_scoped_filter(thread_name)
     stream_log_filter = logger.thread_scoped_filter(thread_name)
 
-    log_file_formatter = logging.Formatter(logger.file_line_format)
+    log_file_formatter = logging.Formatter(logger.logfile_line_format)
     log_filehandler = logging.FileHandler(log_file_path, mode="w")
     log_filehandler.setFormatter(log_file_formatter)
     log_filehandler.addFilter(file_log_filter)
     log_filehandler.setLevel(logging.DEBUG)
 
-    log_strm_formatter = logging.Formatter(logger.strm_line_format)
+    log_strm_formatter = logging.Formatter(logger.stream_line_format)
     log_streamhandler = logging.StreamHandler()
     log_streamhandler.setFormatter(log_strm_formatter)
     log_streamhandler.addFilter(stream_log_filter)

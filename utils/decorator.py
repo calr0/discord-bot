@@ -32,12 +32,46 @@ class base_decorator:
 
     def __call__(self, *args, **kwargs):
         """
-        ### Note
-            derived class must implement
-        ### Example implementation
-            ```
-            return self.func(*args, **kwargs)
-            ```
+        ### Description
+
+        Wraps/overrides decorated function or method call.
+
+        Derived classes must implement.
+
+        ### Example
+        ```
+            # create class derived from base_decorator
+            class print_func_calls(base_decorator):
+                # override __call__ to print each function
+                # decorated with @print_func_call.
+                #
+                # This will print:
+                #   "Entering: <type>.<function>(<args>)"
+                #   right before the decorated function is called
+                #
+                # and:
+                #   "Exiting: <type>.<function>(<args>) -> <return value>"
+                #   right after the decorated function returns
+                def __call__(self, *args, **kwargs):
+                    func_name = f"{self.__name__}"
+                    type_name = f"{self.cls.__name__}" if self.cls else None
+
+                    arg_vals = [
+                        f"self={self}" if self else None,
+                        f"args={args}" if args else None,
+                        f"kwargs={kwargs}" if kwargs else None,
+                    ]
+
+                    func_descr = f"{type_name}.{func_name}" if type_name else func_name
+                    args_descr = ", ".join(filter(None, arg_vals))
+                    call_descr = f"{func_descr}({args_descr})"
+
+                    print(f"Entering: {call_descr}")
+                    ret = self.func(*args, **kwargs)
+                    print(f"Exiting: {call_descr} -> {ret}")
+
+                    return ret
+        ```
         """
         raise NotImplementedError
 
